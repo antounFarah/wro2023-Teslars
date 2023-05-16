@@ -110,7 +110,7 @@ void setup() {
 }
 void loop()
 {
-    steering.write(pid(distance[2], 40, 1, 0.0002, 0.5));
+    //steering.write(pid(distance[2], 40, 1, 0.0002, 0.5));
     if (!dmpReady)
         return;
     if (mpu.dmpGetCurrentFIFOPacket(fifoBuffer))
