@@ -11,6 +11,7 @@ Servo servo1;
 Servo servo2;
 Servo servo3;
 Servo servo4;
+Servo steering;
 
 MPU6050 mpu;
 
@@ -109,6 +110,7 @@ void setup() {
 }
 void loop()
 {
+    steering.write(pid(distance[2], 40, 1, 0.0002, 0.5));
     if (!dmpReady)
         return;
     if (mpu.dmpGetCurrentFIFOPacket(fifoBuffer))
@@ -142,9 +144,7 @@ void send_trig(int x)
     delayMicroseconds(10);
     digitalWrite(trigpin[x], LOW);
     delayMicroseconds(2);
-    while (digitalRead(echopin[x]) == LOW)
-    {
-    }
+    while (digitalRead(echopin[x]) == LOW) {}
     timer[x] = micros();
 }
 
@@ -171,4 +171,17 @@ void read_echo_4()
     duration[3] = micros() - timer[3];
     distance[3] = (duration[3] * 0.034 / 2);
     measured[3] = 0;
+}
+
+float pid(float ultrasonic_value, float goal, float kp, float ki = 0, float kd = 0) {
+    float angle, propotional, integral = 0, derivediv, error, last_error = 0, i = 0 ;
+    propotional = (ultrasonic_value - goal) * kp;
+    error = ultrasonic_value - goal;
+    i = integral + error;
+    integral = i * ki;
+    derivediv = (error - last_error) * kd;
+
+    angle = propotional + integral + derivediv;
+    last_error = error;
+    return angle;
 }
