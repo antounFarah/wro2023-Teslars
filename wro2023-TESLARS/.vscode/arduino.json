@@ -1,5 +1,0 @@
-{
-    "configuration": "cpu=atmega2560",
-    "board": "arduino:avr:mega",
-    "sketch": "wro2023-Teslars\\wro2023-TESLARS\\src\\main\\main.ino"
-}

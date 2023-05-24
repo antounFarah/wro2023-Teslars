@@ -1,12 +1,17 @@
-#include <myimu.h>
+#include "myIMU.h"
+#include "SampleConfig.h"
+
 #include <Servo.h>
+
+
+SampleConfig config;
+myIMU& mpu = config.getMPU();
 
 Servo servo1;
 Servo servo2;
 Servo servo3;
 Servo servo4;
-Servo steering;
-myimu IMU;
+// Servo steering;
 
 
 // used arduino mega pins
@@ -20,7 +25,7 @@ const int echopin[] = {2, 3, 18, 19};
 
 int i;
 
-int yaw;
+float yaw;
 
 volatile int measured[] = {0, 0, 0, 0};
 volatile long duration[4];
@@ -28,7 +33,7 @@ volatile long timer[4];
 volatile double distance[4];
 
 void setup() {
-    IMU.imu_init();
+    mpu.init();
     for (i = 0; i < 4; i++)
     {
         pinMode(trigpin[i], OUTPUT);
@@ -46,8 +51,8 @@ void setup() {
 }
 void loop()
 {
-    yaw = IMU.readyaw();
-
+    
+	mpu.getyaw(yaw);
     servo1.write(yaw);
     servo2.write(yaw);
     servo3.write(yaw);
