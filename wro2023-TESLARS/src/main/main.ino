@@ -1,11 +1,15 @@
 #include "SampleConfig.h"
 #include "myIMU.h"
 
+#include "Pixy2.h"
+
 #include <Servo.h>
 
 #define encoder1 21
 #define no_of_holes 20
 volatile int counter = 0; 
+
+Pixy2 pixy;
 
 SampleConfig config;
 myIMU& mpu = config.getMPU();
@@ -24,7 +28,7 @@ Servo servo4;
 const int trigpin[] = { 4, 5, 6, 7 };
 const int echopin[] = { 2, 3, 18, 19 };
 
-int i;
+int i, j;
 
 float yaw;
 
@@ -36,6 +40,8 @@ volatile double distance[4];
 void setup()
 {
     mpu.init();
+    pixy.init();
+
     pinMode(encoder1, INPUT);
 
     for (i = 0; i < 4; i++) {
@@ -118,6 +124,22 @@ void count(){
     counter += 1;
 }
 
+void read_pixy() {
+  // grab blocks!
+  pixy.ccc.getBlocks();
 
+  if (pixy.ccc.numBlocks)
+  {
+    Serial.print("Detected ");
+    Serial.println(pixy.ccc.numBlocks);
+    for (j = 0; j < pixy.ccc.numBlocks; j++)
+    {
+      Serial.print("  block ");
+      Serial.print(j);
+      Serial.print(": ");
+      pixy.ccc.blocks[i].print();
+    }
+  }
+}
 
 
