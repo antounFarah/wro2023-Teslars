@@ -1,8 +1,7 @@
-#include "myIMU.h"
 #include "SampleConfig.h"
+#include "myIMU.h"
 
 #include <Servo.h>
-
 
 SampleConfig config;
 myIMU& mpu = config.getMPU();
@@ -13,29 +12,28 @@ Servo servo3;
 Servo servo4;
 // Servo steering;
 
-
 // used arduino mega pins
 /*
 4, 5, 6, 7, 18, 19: ultrasonic
 8, 9, 10, 11 : ultrasonic servos
 
 */
-const int trigpin[] = {4, 5, 6, 7};
-const int echopin[] = {2, 3, 18, 19};
+const int trigpin[] = { 4, 5, 6, 7 };
+const int echopin[] = { 2, 3, 18, 19 };
 
 int i;
 
 float yaw;
 
-volatile int measured[] = {0, 0, 0, 0};
+volatile int measured[] = { 0, 0, 0, 0 };
 volatile long duration[4];
 volatile long timer[4];
 volatile double distance[4];
 
-void setup() {
+void setup()
+{
     mpu.init();
-    for (i = 0; i < 4; i++)
-    {
+    for (i = 0; i < 4; i++) {
         pinMode(trigpin[i], OUTPUT);
         pinMode(echopin[i], INPUT_PULLUP);
     }
@@ -51,13 +49,12 @@ void setup() {
 }
 void loop()
 {
-    
-	mpu.getyaw(yaw);
+
+    mpu.getyaw(yaw);
     servo1.write(yaw);
     servo2.write(yaw);
     servo3.write(yaw);
     servo4.write(yaw);
-
 }
 void send_trig(int x)
 {
@@ -68,7 +65,7 @@ void send_trig(int x)
     delayMicroseconds(10);
     digitalWrite(trigpin[x], LOW);
     delayMicroseconds(2);
-    while (digitalRead(echopin[x]) == LOW) {}
+    while (digitalRead(echopin[x]) == LOW) { }
     timer[x] = micros();
 }
 
@@ -97,8 +94,9 @@ void read_echo_4()
     measured[3] = 0;
 }
 
-float pid(float ultrasonic_value, float goal, float kp, float ki = 0, float kd = 0) {
-    float angle, propotional, integral = 0, derivediv, error, last_error = 0, i = 0 ;
+float pid(float ultrasonic_value, float goal, float kp, float ki = 0, float kd = 0)
+{
+    float angle, propotional, integral = 0, derivediv, error, last_error = 0, i = 0;
     propotional = (ultrasonic_value - goal) * kp;
     error = ultrasonic_value - goal;
     i = integral + error;
