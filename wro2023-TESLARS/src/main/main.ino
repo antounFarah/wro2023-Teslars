@@ -3,6 +3,10 @@
 
 #include <Servo.h>
 
+#define encoder1 21
+#define no_of_holes 20
+volatile int counter = 0; 
+
 SampleConfig config;
 myIMU& mpu = config.getMPU();
 
@@ -10,7 +14,6 @@ Servo servo1;
 Servo servo2;
 Servo servo3;
 Servo servo4;
-// Servo steering;
 
 // used arduino mega pins
 /*
@@ -33,6 +36,8 @@ volatile double distance[4];
 void setup()
 {
     mpu.init();
+    pinMode(encoder1, INPUT);
+
     for (i = 0; i < 4; i++) {
         pinMode(trigpin[i], OUTPUT);
         pinMode(echopin[i], INPUT_PULLUP);
@@ -41,6 +46,8 @@ void setup()
     attachInterrupt(digitalPinToInterrupt(echopin[1]), read_echo_2, FALLING);
     attachInterrupt(digitalPinToInterrupt(echopin[2]), read_echo_3, FALLING);
     attachInterrupt(digitalPinToInterrupt(echopin[3]), read_echo_4, FALLING);
+
+    attachInterrupt(digitalPinToInterrupt(encoder1), count, RISING);
 
     servo1.attach(8);
     servo2.attach(9);
@@ -107,3 +114,10 @@ float pid(float ultrasonic_value, float goal, float kp, float ki = 0, float kd =
     last_error = error;
     return angle;
 }
+void count(){
+    counter += 1;
+}
+
+
+
+
