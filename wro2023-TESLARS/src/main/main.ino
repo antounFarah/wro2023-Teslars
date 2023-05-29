@@ -1,6 +1,4 @@
-#include "SampleConfig.h"
-#include "myIMU.h"
-
+#include "impu.h"
 #include "Pixy2.h"
 
 #include <Servo.h>
@@ -11,8 +9,9 @@ volatile int counter = 0;
 
 Pixy2 pixy;
 
-SampleConfig config;
-myIMU& mpu = config.getMPU();
+int mx = 41, my = 20;
+impu imu(mx, my);
+
 
 Servo servo1;
 Servo servo2;
@@ -39,7 +38,8 @@ volatile double distance[4];
 
 void setup()
 {
-    mpu.init();
+    imu.init();
+    imu.gessoffsets();
     pixy.init();
 
     pinMode(encoder1, INPUT);
@@ -63,7 +63,7 @@ void setup()
 void loop()
 {
 
-    mpu.getyaw(yaw);
+    imu.getyaw(yaw);
     servo1.write(yaw);
     servo2.write(yaw);
     servo3.write(yaw);
@@ -123,7 +123,30 @@ float pid(float ultrasonic_value, float goal, float kp, float ki = 0, float kd =
 void count(){
     counter += 1;
 }
+float medianfilter(float values[4]){
+    for (i = 0 ; i < 4; i++){
+        for (j = 4; j > i; j--){
+            if (values[j] > values[i]){
+                float storage = values[i];
+                values[i] = values[j];
+                values[j] = values[i];
+            }
+        }
+    }
+    return values[2];
+}
+void runningavgfilter(float last_read, float new_read){
+    new_read = (new_read - last_read) / 2;
+}
 
+float kalman_filter(float u){
+    float const r = 40, fi = 1.0, h = 1.0, q = 10.0;
+    float p = 0, u_hat = 0, k = 0;
+    k = p * h / (h * h * p + r);
+    u_hat += k * (u - h * u_hat);
+    p = (1 - k * h) * p + q;
+    return u_hat;
+}
 void read_pixy() {
   // grab blocks!
   pixy.ccc.getBlocks();
