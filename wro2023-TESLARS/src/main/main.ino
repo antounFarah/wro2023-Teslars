@@ -39,7 +39,6 @@ volatile double distance[4];
 void setup()
 {
     imu.init();
-    imu.gessoffsets();
     pixy.init();
 
     pinMode(encoder1, INPUT);

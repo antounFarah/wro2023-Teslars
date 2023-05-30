@@ -12,7 +12,6 @@ class impu
 {
 private:
     #define OUTPUT_READABLE_YAWPITCHROLL
-    #define INTERRUPT_PIN 2
     bool blinkState = false;
 
     bool dmpReady = false; 
@@ -38,7 +37,6 @@ public:
     impu(int& setx, int& sety);
     ~impu();
     void init();
-    void gessoffsets();
     void getyaw(float& yaw);
 };
 
@@ -74,13 +72,6 @@ inline void impu::init()
     } 
 }
 
-inline void impu::gessoffsets() 
-{ 
-    mpu.setXGyroOffset(offx);
-    mpu.setYGyroOffset(offy);
-    mpu.setZGyroOffset(0);
-    mpu.setZAccelOffset(-10);
-}
 
 inline void impu::getyaw(float& yaw) 
 { 

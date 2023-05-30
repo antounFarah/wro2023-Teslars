@@ -6,7 +6,6 @@ impu imu(mx, my);
 
 void setup(){
   imu.init();
-  imu.gessoffsets();
   Serial.begin(115200);
 
 }
