@@ -59,6 +59,13 @@ inline void impu::init()
     #endif
     mpu.initialize();
     devStatus = mpu.dmpInitialize();
+    mpu.setXGyroOffset(offx);
+    mpu.setYGyroOffset(offy);
+    mpu.setZGyroOffset(1);
+    mpu.setXAccelOffset(0);
+    mpu.setYAccelOffset(0);
+    mpu.setZAccelOffset(-10);
+
     if (devStatus == 0) {
         // Calibration Time: generate offsets and calibrate our MPU6050
         mpu.CalibrateAccel(6);
