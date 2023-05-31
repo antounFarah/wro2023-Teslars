@@ -1,4 +1,6 @@
 #include "impu.h"
+#include <SimpleKalmanFilter.h>
+
 #include "Pixy2.h"
 
 #include <Servo.h>
@@ -9,9 +11,10 @@ volatile int counter = 0;
 
 Pixy2 pixy;
 
-int mx = 41, my = 20;
+int mx = 51, my = 10;
 impu imu(mx, my);
 
+SimpleKalmanFilter simpleKalmanFilter(0.5, 0.5, 0.01);
 
 Servo servo1;
 Servo servo2;
@@ -63,10 +66,12 @@ void loop()
 {
 
     imu.getyaw(yaw);
-    servo1.write(yaw);
-    servo2.write(yaw);
-    servo3.write(yaw);
-    servo4.write(yaw);
+    float estimated_value = simpleKalmanFilter.updateEstimate(yaw);
+
+    servo1.write(estimated_value);
+    servo2.write(estimated_value);
+    servo3.write(estimated_value);
+    servo4.write(estimated_value);
 }
 void send_trig(int x)
 {
@@ -138,28 +143,18 @@ void runningavgfilter(float last_read, float new_read){
     new_read = (new_read - last_read) / 2;
 }
 
-float kalman_filter(float u){
-    float const r = 40, fi = 1.0, h = 1.0, q = 10.0;
-    float p = 0, u_hat = 0, k = 0;
-    k = p * h / (h * h * p + r);
-    u_hat += k * (u - h * u_hat);
-    p = (1 - k * h) * p + q;
-    return u_hat;
-}
 void read_pixy() {
   // grab blocks!
   pixy.ccc.getBlocks();
 
   if (pixy.ccc.numBlocks)
   {
-    Serial.print("Detected ");
-    Serial.println(pixy.ccc.numBlocks);
     for (j = 0; j < pixy.ccc.numBlocks; j++)
     {
       Serial.print("  block ");
       Serial.print(j);
       Serial.print(": ");
-      pixy.ccc.blocks[i].print();
+      pixy.ccc.blocks[j].print();
     }
   }
 }
