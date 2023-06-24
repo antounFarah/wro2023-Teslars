@@ -1,38 +1,46 @@
 #include "impu.h"
 #include <SimpleKalmanFilter.h>
-
 #include "Pixy2.h"
-
 #include <Servo.h>
 
-#define encoder1 21
+#define F_encoder_Right 19
+#define F_encoder_Left 18
+#define S_encoder_Right 38
+#define S_encoder_Left 36
+#define right_servo 10
+#define left_servo 12
+#define forward_servo 11
+#define steering_servo 9
+#define camera_servo 8
+#define BTS_right_enabl 22
+#define BTS_left_enabl 24
+#define BTS_right_pwm 6
+#define BTS_left_pwm 7
+#define BUTTON_PIN 48
+
+int ultrasonic_trigger[] = {22, 24, 26, 28};
+int ultrasonic_echo[] = {2, 2, 3, 30};
+int LED[] = {40, 42, 44, 46};
+int ANALOG[] = {A8, A9, A10, A11};
+
+
 #define no_of_holes 20
-volatile int counter = 0; 
+volatile int right_counter = 0; 
+volatile int left_counter = 0; 
 
 Pixy2 pixy;
 
-int mx = 51, my = 10;
+int mx = 51, my = 30;
 impu imu(mx, my);
 
-SimpleKalmanFilter simpleKalmanFilter(0.5, 0.5, 0.01);
+SimpleKalmanFilter simpleKalmanFilter(0.5, 0.5, 0.001);
 
 Servo servo1;
 Servo servo2;
 Servo servo3;
-Servo servo4;
-
-// used arduino mega pins
-/*
-4, 5, 6, 7, 18, 19: ultrasonic
-8, 9, 10, 11 : ultrasonic servos
-
-*/
-const int trigpin[] = { 4, 5, 6, 7 };
-const int echopin[] = { 2, 3, 18, 19 };
-
 int i, j;
 
-float yaw;
+double yaw, last_yaw = 0, deltayaw, real_value, estimated_value;
 
 volatile int measured[] = { 0, 0, 0, 0 };
 volatile long duration[4];
@@ -44,45 +52,41 @@ void setup()
     imu.init();
     pixy.init();
 
-    pinMode(encoder1, INPUT);
+    pinMode(F_encoder_Right, INPUT);
+    pinMode(F_encoder_Left, INPUT);
+    pinMode(S_encoder_Right, INPUT);
+    pinMode(S_encoder_Left, INPUT);
 
     for (i = 0; i < 4; i++) {
-        pinMode(trigpin[i], OUTPUT);
-        pinMode(echopin[i], INPUT_PULLUP);
+        pinMode(ultrasonic_trigger[i], OUTPUT);
+        pinMode(ultrasonic_echo[i], INPUT_PULLUP);
     }
-    attachInterrupt(digitalPinToInterrupt(echopin[0]), read_echo_1, FALLING);
-    attachInterrupt(digitalPinToInterrupt(echopin[1]), read_echo_2, FALLING);
-    attachInterrupt(digitalPinToInterrupt(echopin[2]), read_echo_3, FALLING);
-    attachInterrupt(digitalPinToInterrupt(echopin[3]), read_echo_4, FALLING);
+    attachInterrupt(digitalPinToInterrupt(ultrasonic_echo[0]), read_echo_1, FALLING);
+    attachInterrupt(digitalPinToInterrupt(ultrasonic_echo[2]), read_echo_2, FALLING);
+    attachInterrupt(digitalPinToInterrupt(ultrasonic_echo[3]), read_echo_3, FALLING);
 
-    attachInterrupt(digitalPinToInterrupt(encoder1), count, RISING);
+    attachInterrupt(digitalPinToInterrupt(F_encoder_Right), count_1, RISING);
+    attachInterrupt(digitalPinToInterrupt(F_encoder_Left), count_2, RISING);
 
     servo1.attach(8);
     servo2.attach(9);
     servo3.attach(10);
-    servo4.attach(11);
 }
 void loop()
 {
 
-    imu.getyaw(yaw);
-    float estimated_value = simpleKalmanFilter.updateEstimate(yaw);
-
-    servo1.write(estimated_value);
-    servo2.write(estimated_value);
-    servo3.write(estimated_value);
-    servo4.write(estimated_value);
 }
+
 void send_trig(int x)
 {
     measured[x] = 1;
-    digitalWrite(trigpin[x], LOW);
+    digitalWrite(ultrasonic_trigger[x], LOW);
     delayMicroseconds(2);
-    digitalWrite(trigpin[x], HIGH);
+    digitalWrite(ultrasonic_trigger[x], HIGH);
     delayMicroseconds(10);
-    digitalWrite(trigpin[x], LOW);
+    digitalWrite(ultrasonic_trigger[x], LOW);
     delayMicroseconds(2);
-    while (digitalRead(echopin[x]) == LOW) { }
+    while (digitalRead(ultrasonic_echo[x]) == LOW) { }
     timer[x] = micros();
 }
 
@@ -104,16 +108,10 @@ void read_echo_3()
     distance[2] = (duration[2] * 0.034 / 2);
     measured[2] = 0;
 }
-void read_echo_4()
-{
-    duration[3] = micros() - timer[3];
-    distance[3] = (duration[3] * 0.034 / 2);
-    measured[3] = 0;
-}
 
-float pid(float ultrasonic_value, float goal, float kp, float ki = 0, float kd = 0)
+double pid(double ultrasonic_value, double goal, double kp, double ki = 0, double kd = 0)
 {
-    float angle, propotional, integral = 0, derivediv, error, last_error = 0, i = 0;
+    double angle, propotional, integral = 0, derivediv, error, last_error = 0, i = 0;
     propotional = (ultrasonic_value - goal) * kp;
     error = ultrasonic_value - goal;
     i = integral + error;
@@ -124,25 +122,42 @@ float pid(float ultrasonic_value, float goal, float kp, float ki = 0, float kd =
     last_error = error;
     return angle;
 }
-void count(){
-    counter += 1;
+void count_1(){
+    right_counter += 1;
 }
-float medianfilter(float values[4]){
+void count_2(){
+    left_counter += 1;
+}
+double medianfilter(double median_values[4]){
+    //sort array by values
     for (i = 0 ; i < 4; i++){
         for (j = 4; j > i; j--){
-            if (values[j] > values[i]){
-                float storage = values[i];
-                values[i] = values[j];
-                values[j] = values[i];
+            if (median_values[j] > median_values[i]){
+                //swap values
+                median_values[i] += median_values[j];
+                median_values[j] = median_values[i] - median_values[j];
+                median_values[i] = median_values[i] - median_values[j];
             }
         }
     }
-    return values[2];
+    //return the middle value 
+    return median_values[2];
 }
-void runningavgfilter(float last_read, float new_read){
+void runningavgfilter(double last_read, double new_read){
     new_read = (new_read - last_read) / 2;
 }
-
+void move_servo(Servo servo){
+    imu.getyaw(yaw);
+    yaw += 180;
+    deltayaw = yaw - last_yaw ;
+    if ((deltayaw < 270) && (deltayaw > -270)){
+        real_value += deltayaw;
+        estimated_value = simpleKalmanFilter.updateEstimate(real_value);
+        servo.write(int(estimated_value) + 90);
+    }
+    Serial.println(estimated_value);
+    last_yaw = yaw;
+}
 void read_pixy() {
   // grab blocks!
   pixy.ccc.getBlocks();
