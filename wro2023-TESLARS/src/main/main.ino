@@ -171,39 +171,9 @@ void setup() {
 }
 
 void loop() {
-    
     while (!digitalRead(button_pin));
     while (digitalRead(button_pin));
     solve_obstacle_challenge();
-    // pixy.ccc.getBlocks();
-    // if (pixy.ccc.numBlocks > 0) Serial.println(pixy.ccc.blocks[0].m_x);
-    // if (pixy.ccc.numBlocks > 0) pixy.ccc.blocks[0].print();
-    // for (int i = 0; i < 7; i++) {
-    //     Serial.println(measured_distance_by_time_FB[0][i]);
-    // }
-    // while (digitalRead(button_pin));
-    // move_car(1, low_speed);
-    // pid_steer_imu_encoder(35, 0);
-    // pid_steer_imu_encoder(avoid_diagonal_distance_1_g, -60);
-    // pid_steer_imu_encoder(avoid_middle_distance_g, 0);
-    // pass_the_corner(2);
-    
-    // while (1) {
-    //     test_car(3);
-    //     delay(30);
-    // }
-
-    // follow_wall(50,40,!direction);
-    // while(1) {
-    //     follow_wall(10, 0);
-    // }
-
-    // int position_after_passing  = pass_the_section();
-    // pass_the_corner(position_after_passing);
-    // // turn_90_reverse();
-    // move_car(0,0);
-    // clean_all_measured_distance_arrays();
-    
 }
 
 //function to test functionality of the car
