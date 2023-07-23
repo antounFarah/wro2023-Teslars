@@ -171,48 +171,13 @@ void setup() {
 }
 
 void loop() {
+    
+    while (!digitalRead(button_pin));
+    while (digitalRead(button_pin));
+    solve_obstacle_challenge();
     // pixy.ccc.getBlocks();
     // if (pixy.ccc.numBlocks > 0) Serial.println(pixy.ccc.blocks[0].m_x);
     // if (pixy.ccc.numBlocks > 0) pixy.ccc.blocks[0].print();
-    while (!digitalRead(button_pin));
-    while (digitalRead(button_pin));
-    int temp_distance_0 = find_distance(0);
-    int temp_distance_1 = find_distance(1);
-    while (temp_distance_0 < 0.1 || temp_distance_1 < 0.1) {
-        send_trig(0);
-        send_trig(1);
-        temp_distance_0 = find_distance(0);
-        temp_distance_1 = find_distance(1);
-    }
-    if (temp_distance_1 > temp_distance_0) direction = 0;
-    follow_wall(30, middle_distance, !direction);
-    turn_90_reverse();
-    for (int k = 0; k < 7; k++){
-        int position_after_passing  = pass_the_section();
-        pass_the_corner(position_after_passing);
-        clean_all_measured_distance_arrays();
-    }
-    turn_180_degrees();
-    direction = !direction;
-    clean_all_measured_distance_arrays();
-    real_value = 0;
-    number_of_turns = 0;
-    for (int k = 0; k < 3; k++){
-        int position_after_passing  = pass_the_section();
-        pass_the_corner(position_after_passing);
-        clean_all_measured_distance_arrays();
-    }
-    while (find_distance(3) < 0.1){
-        send_trig(3);
-        follow_wall(middle_distance, !direction);
-    }
-    while (find_distance(3) < 110){
-        send_trig(3);
-        follow_wall(middle_distance, !direction);
-    }
-    move_car(0, 0);
-    steer(0);
-    refresh_servos();
     // for (int i = 0; i < 7; i++) {
     //     Serial.println(measured_distance_by_time_FB[0][i]);
     // }
@@ -1100,4 +1065,43 @@ void turn_180_degrees() {
     }
     move_car(0,0);
     steer(0);
+}
+void solve_obstacle_challenge() {
+    int temp_distance_0 = find_distance(0);
+    int temp_distance_1 = find_distance(1);
+    while (temp_distance_0 < 0.1 || temp_distance_1 < 0.1) {
+        send_trig(0);
+        send_trig(1);
+        temp_distance_0 = find_distance(0);
+        temp_distance_1 = find_distance(1);
+    }
+    if (temp_distance_1 > temp_distance_0) direction = 0;
+    follow_wall(30, middle_distance, !direction);
+    turn_90_reverse();
+    for (int k = 0; k < 7; k++){
+        int position_after_passing  = pass_the_section();
+        pass_the_corner(position_after_passing);
+        clean_all_measured_distance_arrays();
+    }
+    turn_180_degrees();
+    direction = !direction;
+    clean_all_measured_distance_arrays();
+    real_value = 0;
+    number_of_turns = 0;
+    for (int k = 0; k < 3; k++){
+        int position_after_passing  = pass_the_section();
+        pass_the_corner(position_after_passing);
+        clean_all_measured_distance_arrays();
+    }
+    while (find_distance(3) < 0.1){
+        send_trig(3);
+        follow_wall(middle_distance, !direction);
+    }
+    while (find_distance(3) < 110){
+        send_trig(3);
+        follow_wall(middle_distance, !direction);
+    }
+    move_car(0, 0);
+    steer(0);
+    refresh_servos();
 }
