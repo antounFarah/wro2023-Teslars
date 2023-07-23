@@ -1,0 +1,250 @@
+The Functions in pseudocode:
+
+function find_median(some_array, length_of_array):
+    temp_array = create an empty array of size length_of_array
+    for i in range(length_of_array):
+        temp_array[i] = some_array[i]
+    
+    is_swapped = false
+    for i in range(length_of_array - 1):
+        is_swapped = false
+        for j in range(length_of_array - i - 1):
+            if temp_array[j] > temp_array[j + 1]:
+                temp_array[j + 1], temp_array[j] = temp_array[j], temp_array[j + 1]
+                is_swapped = true
+        if not is_swapped:
+            break
+    
+    return temp_array[length_of_array / 2]
+
+function find_distance(ultrasonic_index):
+    if ultrasonic_index >= 2:
+        length_of_array = size_of(measured_distance_by_time_FB[ultrasonic_index - 2]) / size_of(measured_distance_by_time_FB[ultrasonic_index - 2][0])
+        if last_interrupt_state[ultrasonic_index] is not equal to interrupt_state[ultrasonic_index]:
+            for i in range(length_of_array - 1, 0, -1):
+                measured_distance_by_time_FB[ultrasonic_index - 2][i] = measured_distance_by_time_FB[ultrasonic_index - 2][i - 1]
+            if measured_distance[ultrasonic_index] > 350:
+                measured_distance_by_time_FB[ultrasonic_index - 2][0] = 0
+            else:
+                measured_distance_by_time_FB[ultrasonic_index - 2][0] = measured_distance[ultrasonic_index]
+            last_interrupt_state[ultrasonic_index] = interrupt_state[ultrasonic_index]
+        return find_median(measured_distance_by_time_FB[ultrasonic_index - 2], length_of_array)
+    else:
+        length_of_array = size_of(measured_distance_by_time_RL[ultrasonic_index]) / size_of(measured_distance_by_time_RL[ultrasonic_index][0])
+        if last_interrupt_state[ultrasonic_index] is not equal to interrupt_state[ultrasonic_index]:
+            for i in range(length_of_array - 1, 0, -1):
+                measured_distance_by_time_RL[ultrasonic_index][i] = measured_distance_by_time_RL[ultrasonic_index][i - 1]
+            if measured_distance[ultrasonic_index] > 350:
+                measured_distance_by_time_RL[ultrasonic_index][0] = 0
+            else:
+                measured_distance_by_time_RL[ultrasonic_index][0] = measured_distance[ultrasonic_index]
+            last_interrupt_state[ultrasonic_index] = interrupt_state[ultrasonic_index]
+        return find_median(measured_distance_by_time_RL[ultrasonic_index], length_of_array)
+
+function refresh_servos():
+    read_yaw()
+    for i in range(3):
+        ultra_servo_val[i] = ultra_servo_mid_val[i] + imu_current_val
+        
+    if ultra_servo_val[0] > 156:
+        ultra_servo_val[0] = 156
+    if ultra_servo_val[0] < 65:
+        ultra_servo_val[0] = 65
+    if ultra_servo_val[1] > 120:
+        ultra_servo_val[1] = 120
+    if ultra_servo_val[1] < 20:
+        ultra_servo_val[1] = 20
+    if ultra_servo_val[2] > 125:
+        ultra_servo_val[2] = 125
+    if ultra_servo_val[2] < 75:
+        ultra_servo_val[2] = 75
+    
+    ultra_servo[0].write(ultra_servo_val[0])
+    ultra_servo[1].write(ultra_servo_val[1])
+    ultra_servo[2].write(ultra_servo_val[2])
+    
+    pixy_servo_val = 90 + imu_current_val
+    if pixy_servo_val > 140:
+        pixy_servo_val = 140
+    if pixy_servo_val < 40:
+        pixy_servo_val = 40
+    
+    steer_servo.write(steer_servo_val)
+    pixy_servo.write(pixy_servo_val)
+
+function follow_wall(finish_distance, distanceFromWall, wall):
+    speed_of_car = low_speed
+    steer(0)
+    move_car(true, speed_of_car)
+    send_trig(wall)
+    send_trig(2)
+    refresh_servos()
+    temp_forward_distance = find_distance(2)
+    temp_wall_distance = find_distance(wall)
+    while temp_wall_distance < 0.1 or temp_forward_distance < 0.1:
+        pid_steer_imu(0)
+        send_trig(wall)
+        send_trig(2)
+        temp_forward_distance = find_distance(2)
+        temp_wall_distance = find_distance(wall)
+    
+    left_counter = 0
+    while find_distance(2) > finish_distance:
+        refresh_servos()
+        send_trig(2)
+        send_trig(wall)
+        accelerate_car(find_distance(2) - finish_distance)
+        pid_steer_ultra(wall, distanceFromWall)
+    
+    clean_all_measured_distance_arrays()
+
+function pid_steer_ultra(wall, distanceFromWall):
+    no_wall = false
+    a = 1
+    if wall is true:
+        a = -1
+    error = a * (find_distance(wall) - distanceFromWall)
+    if absolute_value(error - last_error) > 0.01:
+        sum_error += error
+        pid_val = p_steer * error + d_steer * (error - last_error) + i_steer * sum_error
+        if absolute_value(error - last_error) > 10:
+            no_wall = true
+        last_error = error
+
+    if pid_val > 100:
+        pid_val = 100
+    else if pid_val < -100:
+        pid_val = -100
+
+    if no_wall is true:
+        pid_steer_imu(0)
+    else:
+        steer(pid_val)
+
+function pass_the_corner(position):
+    if position == 0:
+        follow_wall(65, 10, !direction)
+        turn_90_short()
+    else if position == 1:
+        send_trig(2)
+        while find_distance(2) < 0.1:
+            send_trig(2)
+        if find_distance(2) > 100:
+            follow_wall(30, 42.5, !direction)
+            turn_90_reverse()
+        else:
+            follow_wall(30, 60, !direction)
+            turn_90_reverse()
+    else:
+        follow_wall(30, 42.5, !direction)
+        turn_90_reverse()
+
+    send_trig(3)
+    while find_distance(3) > 18 || find_distance(3) < 0.1:
+        speed_of_car = low_speed
+        pid_reverse_imu(0)
+        send_trig(3)
+
+    steer(0)
+    move_car(0, 0)
+    clean_all_measured_distance_arrays()
+    delay(100)
+
+function pass_the_section():
+    refresh_servos()
+    move_car(true, low_speed)
+    no_of_obstacles = 0
+    send_trig(3)
+    find_distance(3)
+    while find_object() == 0:
+        send_trig(3)
+        find_distance(3)
+        follow_wall(middle_distance, !direction)
+
+    if find_distance(3) < first_obstacle_distance:
+        if find_object() == 1:
+            color_of_object = 1
+        else:
+            color_of_object = -1
+        avoid_object_ultrasonic()
+        no_of_obstacles++
+        send_trig(direction)
+        temp_find_direction = find_distance(direction)
+        while temp_find_direction < 0.1:
+            send_trig(direction)
+            temp_find_direction = find_distance(direction)
+
+        while find_object() == 0 && (temp_find_direction > 0.1 && temp_find_direction < 80):
+            follow_wall(middle_distance, !direction)
+            send_trig(direction)
+            temp_find_direction = find_distance(direction)
+
+        if temp_find_direction > 0.1 && temp_find_direction < 80:
+            if find_object() == 1:
+                color_of_object = 1
+            else:
+                color_of_object = -1
+            avoid_object_ultrasonic()
+            no_of_obstacles++
+            if color_of_object == 1:
+                return 1
+            else:
+                return 0
+        else:
+            return 2
+    else:
+        if find_object() == 1:
+            color_of_object = 1
+        else:
+            color_of_object = -1
+        avoid_object_ultrasonic()
+        no_of_obstacles++
+        if color_of_object == 1:
+            return 1
+        else:
+            return 0
+
+
+function avoid_object_ultrasonic():
+    if object_color == 1:                    // green obstacles solving
+        if not direction:
+            send_trig(0)
+            temp_find_distance_0 = find_distance(0)
+            while temp_find_distance_0 > distance_from_object or temp_find_distance_0 < 0.1:
+                follow_wall(10, 1)
+                send_trig(0)
+                temp_find_distance_0 = find_distance(0)
+            steer(-1 * imu_current_val + 25)
+            refresh_servos()
+            delay(avoid_object_ultrasonic_delay)
+        else:
+            send_trig(0)
+            temp_find_distance_0 = find_distance(0)
+            while temp_find_distance_0 > distance_from_object:
+                follow_wall(75, 0)
+                temp_find_distance_0 = find_distance(0)
+                send_trig(0)
+            steer(-1 * imu_current_val + 25)
+            refresh_servos()
+            delay(avoid_object_ultrasonic_delay)
+    else if object_color == 2:               // red obstacles solving
+        if direction:
+            send_trig(1)
+            temp_find_distance_1 = find_distance(1)
+            while temp_find_distance_1 > distance_from_object or temp_find_distance_1 < 0.1:
+                follow_wall(10, 0)
+                send_trig(1)
+                temp_find_distance_1 = find_distance(1)
+            steer(-1 * imu_current_val - 25)
+            refresh_servos()
+            delay(avoid_object_ultrasonic_delay)
+        else:
+            send_trig(1)
+            temp_find_distance_1 = find_distance(1)
+            while temp_find_distance_1 > distance_from_object:
+                follow_wall(75, 1)
+                temp_find_distance_1 = find_distance(1)
+                send_trig(1)
+            steer(-1 * imu_current_val - 25)
+            refresh_servos()
+            delay(avoid_object_ultrasonic_delay)
