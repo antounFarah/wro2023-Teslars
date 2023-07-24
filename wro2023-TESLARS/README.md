@@ -24,3 +24,5 @@ The second folder contains the robot’s virtual photos that were taken from Sol
 
 7-	Video:
 This directory contains the video.md file with a URL to YouTube  that is accessible by link showing the vehicle completing the tasks.
+
+![Final Assembly](https://github.com/antounFarah/wro2023-Teslars/assets/140340821/112a9d13-683d-43d3-8a5f-83ba92eff997)
