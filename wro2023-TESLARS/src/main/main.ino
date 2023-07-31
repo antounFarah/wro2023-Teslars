@@ -23,14 +23,16 @@
 #define no_of_holes         20      //a variable to specify the holes in the disk of the encoder
 
 int ultrasonic_trigger[] = {40, 42, 44, 46};    //the four ultrasonic trigger pins {right, left, forward, backward}
+int ultrasonic_trigger_pulse[] = {};
+int ultrasonic_echo_pulse[] = {};
 int ultrasonic_echo[]    = { 18, 19,  2, 3};    //the four ultrasonic echo pins {right, left, forward, backward}
 int leds[]               = {30, 32, 34, 38};    //four leds to indicate it is time to recharge batteries
 int analogs[]            = {A8, A9, A10, A11};  //four power sourced connected to voltage dividers
 
 //objects 
 Pixy2 pixy;                                 //declaring pixyCam object
-int mx = 51, my = 30;                       //imu mpu6050 offsets used for calibration
-impu imu(&mx, &my);                         //imu mpu6050 offsets used for calibration
+int mx = 70, my = 24, mz = -2;              //imu mpu6050 offsets used for calibration
+impu imu(mx, my, mz);                           //imu mpu6050 offsets used for calibration
 SimpleKalmanFilter kalman(0.5, 0.5, 0.001); //declaring kalman_filter object
 Servo ultra_servo[3];   // 0 is right (max: 156, min: 54) 1 is left (max: 140, min: 20) 2 is forward (max: 120, min 76)
 Servo pixy_servo; 
@@ -40,7 +42,7 @@ Servo steer_servo;
 
 //positioning
 bool direction = 1; // 0 means clockwise, 1 means anti-clockwise
-int start_speed = 160, low_speed = 200, high_speed = 230;
+int start_speed = 215, low_speed = 215, high_speed = 215;
 int speed_of_car = 0;   
 int number_of_turns = 0;    //number of 90* turns
 double cm_per_hole = 0.5;   //each hole on the encoder is equal to this value
@@ -50,9 +52,9 @@ double change_speed = high_speed - low_speed;
 double change_per_hole = change_speed / acceleration_holes;
 
 //ultrasonic PID values
-double p_steer = 6.5;
+double p_steer = 8;
 double i_steer = 0.0;
-double d_steer = 70;
+double d_steer = 120;
 double error = 0;
 double last_error = 0;
 double sum_error = 0;
@@ -89,12 +91,15 @@ double imu_overall_val = 0;         //yaw overall value from the starting positi
 double imu_current_val = 0;         //yaw straight section value range from -90 to 90
 
 //arrays used to calculate the measured_distance between the ultrasonic and the wall
+volatile double k_sound = 0.035;
 volatile bool is_measured[] = { true, true, true, true };
 volatile long duration[4];
 volatile long timer[4];
 volatile double measured_distance[4];
-double measured_distance_by_time_FB[2][7] = {{0, 0, 0, 0, 0}, {0, 0, 0, 0, 0}}; //median values for forward and backward hc-sr04
+volatile int interrupt_counter[4] = {0, 0, 0, 0};
+double measured_distance_by_time_FB[2][5] = {{0, 0, 0, 0, 0}, {0, 0, 0, 0, 0}}; //median values for forward and backward hc-sr04
 double measured_distance_by_time_RL[2][5] = {{0, 0, 0, 0, 0}, {0, 0, 0, 0, 0}}; //median values for right and left hc-sr04
+double measured_distance_by_time_RL_back[2][5] = {{0, 0, 0, 0, 0}, {0, 0, 0, 0, 0}};
 //the next tow arrays are used to ensure that the median filter function doesn't work unless
 //there is a new value from the hc-sr04 to prevent duplicates
 bool interrupt_state[4] = {0, 0, 0, 0};         //every tinme echo interrupt it changes this value
@@ -104,9 +109,11 @@ bool last_interrupt_state[4] = {0, 0, 0, 0};    //to remember the interrupt_stat
 long object_center_x, object_center_y, object_width, object_height;
 int object_color, object_color_array[5];
 double middle_distance = 42.5;
+double far_distance = 72;
+double close_distance = 13;
 int color_of_object = 0;
 bool start_position = 0; // 0 means last one was red, 1 means last one was green.
-int first_obstacle_distance = 70;
+int first_obstacle_distance = 73;
 double avoid_start_distance_g = 0;
 double avoid_diagonal_distance_1_g = 40;
 double avoid_diagonal_distance_2_g = 0;
@@ -120,8 +127,12 @@ double avoid_finish_distance_r = 0;
 double middle_finish_distance = 40;
 double angle_of_avoid = 60;
 int avoid_object_ultrasonic_delay = 700;
-double distance_from_object = 40;
+double distance_from_object = 41.23;
 
+
+//surprise rule
+char surprise_rule_array[4];
+int blue_counter = 0;
 //robot\object      R       M       L
 //      20           83      47      10      20
 //      42.5           196     156     112
@@ -171,9 +182,38 @@ void setup() {
 }
 
 void loop() {
+    // while (true) {
+    //     test_car(1);
+    // }
     while (!digitalRead(button_pin));
     while (digitalRead(button_pin));
+
+    move_car(1, low_speed);
+    speed_of_car = low_speed;
+    int temp_dist_from_wall;
+    pass_first_surprise_rule();
+    for (int k = 1; k < 11; k++){
+        if (k < 5) temp_dist_from_wall = middle_distance;
+        else if (k < 9) temp_dist_from_wall = far_distance;
+        else temp_dist_from_wall = close_distance;
+        int temp_turn = pass_rule_section(k, temp_dist_from_wall);
+        pass_the_corner(temp_turn);
+        clean_all_measured_distance_arrays();
+    }
+    int temp_turn = pass_rule_section(12, temp_dist_from_wall);
+    move_car(0, 0);
+    while(1){ continue;};
+    while (!digitalRead(button_pin));
+    while (digitalRead(button_pin));
+    // turn_180_degrees();
+    // follow_wall(50, 42.5, !direction);
+    move_car(1, low_speed);
+    // pass_the_section();
     solve_obstacle_challenge();
+    // pass_first_section();
+    // while(1) {
+    // test_car(1);
+    // }
 }
 
 //function to test functionality of the car
@@ -182,8 +222,8 @@ void test_car(int a) {
         refresh_servos();
         Serial.print(yaw);
         delay(10);
-        steer(-100);
-        // move_car(1,255);
+        steer(0);
+        move_car(1,210);
         send_trig(0);
         send_trig(1);
         send_trig(2);
@@ -218,10 +258,21 @@ void test_car(int a) {
 // // // // //
 // // // //
 
-
+double measure_distance_pulse(int ultrasonic_index) {
+    digitalWrite(ultrasonic_trigger_pulse[ultrasonic_index], LOW);
+    delayMicroseconds(4);
+    digitalWrite(ultrasonic_trigger_pulse[ultrasonic_index], HIGH);
+    delayMicroseconds(12);
+    digitalWrite(ultrasonic_trigger_pulse[ultrasonic_index], LOW);
+    delayMicroseconds(4);
+    long timer = pulseIn(ultrasonic_echo_pulse[ultrasonic_index], HIGH, 1000);
+    long temp_duration = micros() - timer;
+    double measured_distance = (temp_duration * k_sound / 2);
+    return  measured_distance;
+}
 void send_trig(int ultrasonic_index) {
     //don't send triggers if you didn't get the last echo or it has been lass than 35 ms
-    if (!is_measured[ultrasonic_index] || micros() - timer[ultrasonic_index] < 35000) return;
+    if (!is_measured[ultrasonic_index] || micros() - timer[ultrasonic_index] < 30000) return;
     is_measured[ultrasonic_index] = false;  //when the echo return it will be high again so we can send trig again
     //this is how to send trigger according to hc-sr04 datasheet
     digitalWrite(ultrasonic_trigger[ultrasonic_index], LOW);
@@ -242,30 +293,34 @@ void send_trig(int ultrasonic_index) {
 //Right sensor
 void ultra_R_interrupt() {
     duration[0] = micros() - timer[0];
-    measured_distance[0] = (duration[0] * 0.034 / 2);
+    measured_distance[0] = (duration[0] * k_sound / 2);
     is_measured[0] = true;
     interrupt_state[0] = !interrupt_state[0];
+    interrupt_counter[0] += 1;
 }
 //left sensor
 void ultra_L_interrupt() {
     duration[1] = micros() - timer[1];
-    measured_distance[1] = (duration[1] * 0.034 / 2);
+    measured_distance[1] = (duration[1] * k_sound / 2);
     is_measured[1] = true;
     interrupt_state[1] = !interrupt_state[1];
+    interrupt_counter[1] += 1;
 }
 //forward sensor
 void ultra_F_interrupt() {
     duration[2] = micros() - timer[2];
-    measured_distance[2] = (duration[2] * 0.034 / 2);
+    measured_distance[2] = (duration[2] * k_sound / 2);
     is_measured[2] = true;
     interrupt_state[2] = !interrupt_state[2];
+    interrupt_counter[2] += 1;
 }
 //backward sensor
 void ultra_B_interrupt() {
     duration[3] = micros() - timer[3];
-    measured_distance[3] = (duration[3] * 0.034 / 2);
+    measured_distance[3] = (duration[3] * k_sound / 2);
     is_measured[3] = true;
     interrupt_state[3] = !interrupt_state[3];
+    interrupt_counter[3] += 1;
 }
 
 double find_distance(int ultrasonic_index) {
@@ -400,7 +455,16 @@ void read_yaw() {
     //pause_interrupts();
     imu.getyaw(yaw);        //get the value of yaw
     //resume_interrupts();
-    delay(5);               //so it won't ask the dmp for too many values in a short time
+    if (Wire.getWireTimeoutFlag()) {
+        Wire.end();
+        move_car(0, 0);
+        steer(0);
+        delay(2000);
+        Wire.begin();
+        delay(5000);
+        Wire.clearWireTimeoutFlag();
+    }
+    delay(5);         //so it won't ask the dmp for too many values in a short time
     delta_yaw = yaw - last_yaw ;    //get the delta of yaw value
     if (delta_yaw < 150 && delta_yaw > -150) { //solving the problem that the dmp return values 180 and -180 in a random
         real_value += delta_yaw;
@@ -414,88 +478,194 @@ void read_yaw() {
 }
 
 void turn_90_reverse() { //turn to the next section in reverse
+    // pause_interrupts();
     int temp_direction;
+    send_trig(2);
+    double temp_dist_2 = find_distance(2);
     if (direction) temp_direction = -1;
     else temp_direction = 1;
     move_car(1, start_speed);
-    while (abs(imu_current_val) < 35) {
-        steer(temp_direction * 100);
-        refresh_servos();
+    if (direction){
+        while (imu_current_val > -30 && (temp_dist_2 > 10 || temp_dist_2 < 0.1)) {
+            send_trig(2);
+            temp_dist_2 = find_distance(2);
+            steer(temp_direction * 100);
+            refresh_servos();
+        }
+    } else {
+        while (imu_current_val < 30 && (temp_dist_2 > 10 || temp_dist_2 < 0.1)) {
+            send_trig(2);
+            temp_dist_2 = find_distance(2);
+            steer(temp_direction * 100);
+            refresh_servos();
+        }
     }
+    
     move_car(0,0);
     steer(-1 * temp_direction * 100);
-    delay(200);
+    delay(400);
     move_car(0,start_speed);
     while (abs(imu_current_val) < 85) {
         steer(-1 * temp_direction * 100);
-        refresh_servos();
+        refresh_steer();
     }
     number_of_turns -= temp_direction;
-    refresh_servos();
+    refresh_steer();
     steer(0);
     move_car(0, 0);
-    refresh_servos();
+    refresh_steer();
+    // resume_interrupts();
 }
 
 void turn_90_short() {   //turn to the next section fast way
+    pause_interrupts();
     int temp_direction;
     if (direction) temp_direction = -1;
     else temp_direction = 1;
     move_car(1, low_speed);
     while (abs(imu_current_val) < 20) {
         steer(temp_direction * 80);
-        refresh_servos();
+        refresh_steer();
     }
     while (abs(imu_current_val) < 70) {
         steer(temp_direction * 100);
-        refresh_servos();
+        refresh_steer();
     }
     while (abs(imu_current_val) < 85) {
         steer(temp_direction * 80);
-        refresh_servos();
+        refresh_steer();
     }
     number_of_turns -= temp_direction;
+    resume_interrupts();
 }
 
 void turn_90() {    //turn to the next section slow way
     move_car(1, low_speed - 15);
     steer(0);
-    refresh_servos();
+    refresh_steer();
     double temp_imu_current_val = imu_current_val;
     if(direction) {
         while ((imu_current_val - temp_imu_current_val) > -15) {
-            refresh_servos();
+            refresh_steer();
             steer(-60 + (imu_current_val - temp_imu_current_val) * 40 / 15);
         }
         steer(-100);
         number_of_turns++;
-        refresh_servos();
+        refresh_steer();
         while (imu_current_val > 30) { // > 20
-            refresh_servos();
+            refresh_steer();
         }
         while (imu_current_val > 10) { // > 0
-            refresh_servos();
+            refresh_steer();
             steer((imu_current_val - 10) * -70 / 20 -30);
         }
     } else {
         while ((imu_current_val - temp_imu_current_val) < 15) {
-            refresh_servos();
+            refresh_steer();
             steer(60 + (imu_current_val - temp_imu_current_val) * 40 / 15);
         }
         steer(100);
         number_of_turns--;
-        refresh_servos();
+        refresh_steer();
         while (imu_current_val  < - 30) { // < -20
-            refresh_servos();
+            refresh_steer();
         }
         while (imu_current_val  < -10) { // < 0
-            refresh_servos();
+            refresh_steer();
             steer((imu_current_val + 10) * -70 / 20 +30);
         }
     }
     steer(0);
-    refresh_servos();
+    refresh_steer();
     clean_all_measured_distance_arrays();
+}
+
+void correct_angle() {
+    move_car(0, 0);
+    steer(0);
+    refresh_steer();
+    ultra_servo[!direction].write(ultra_servo_mid_val[!direction]);
+    delay(50);
+    read_yaw();
+    int temp_direction = 1;
+    if (direction) temp_direction = -1;
+    double temp_yaw_val = imu_current_val;
+    double temp_primary_distance = 0;
+    double temp_secondary_distance = 100;
+    int t = 1;
+    double temp_diffrence_values[6];
+    temp_diffrence_values[0] = 1000000;
+    steer(temp_direction * 100);
+    refresh_steer();
+    delay(50);
+    while (abs(temp_primary_distance - temp_secondary_distance) > 3 && t < 5) {
+        move_car(0, 0);
+        send_trig(!direction);
+        interrupt_counter[!direction] = 0;
+        temp_primary_distance = find_distance(!direction);
+        while (interrupt_counter[!direction] < 5) {
+            send_trig(!direction);
+            temp_primary_distance = find_distance(!direction);
+        }
+        delay(50);
+        for (int i = 0; i < 5; i++){
+            double temp_side_back_distance = measure_distance_pulse(!direction);
+            if (abs(temp_side_back_distance) < 0.1) temp_side_back_distance = 10000;
+            else if (temp_side_back_distance > 100) temp_side_back_distance = 10000;
+            else {
+                measured_distance_by_time_RL_back[!direction][i] = temp_side_back_distance;
+            }
+            delay(30);
+        }
+        temp_secondary_distance = find_median(measured_distance_by_time_RL_back[!direction], 5);
+        move_car(0, 150);
+        delay(500);
+        steer(0);
+        delay(2500);
+        break; ///////////// delete
+        // move_car(0, 0);
+        // delay(100);
+        // temp_diffrence_values[t] = abs(temp_primary_distance - temp_secondary_distance);
+        // if (temp_diffrence_values[t] > temp_diffrence_values[t - 1]) {
+        //     break;
+        // }
+        // t++;
+    }
+    // move_car(0, 0);
+    // steer(0);
+    // delay(200);
+    // if (abs(temp_primary_distance - temp_secondary_distance) <= 3) {
+    //     read_yaw();
+    //     imu_current_val = 0;
+    //     imu_overall_val = 0;
+    //     real_value = 0;
+    //     number_of_turns = 0;
+    // } else if (t < 5) {
+    //     steer(-1 * temp_direction * 100);
+    //     refresh_steer();
+    //     move_car(1, 150);
+    //     delay(500);
+    //     move_car(0, 0);
+    //     delay(100);
+
+    // } else {
+    //     steer(-1 * temp_direction * 100);
+    //     refresh_steer();
+    //     move_car(0, 150);
+    //     delay(800);
+    //     move_car(0, 0);
+    //     delay(100);
+    // }
+    read_yaw();
+    imu_current_val = 0;
+    imu_overall_val = 0;
+    real_value = 0;
+    number_of_turns = 0;
+}
+
+void refresh_steer() {
+    read_yaw();
+    steer_servo.write(steer_servo_val);
 }
 
 void refresh_servos() {     //refresh servos according to the imu so they will be perpendicular to the walls and move the steering servo to the new value
@@ -544,7 +714,7 @@ void move_car(bool directionOfCar, int speedOfcar) { //send signals to the bts-7
         analogWrite(bts_right_pwm, speedOfcar);
     } else {
         analogWrite(bts_right_pwm, 0);
-        analogWrite(bts_left_pwm, speedOfcar);
+        analogWrite(bts_left_pwm, speedOfcar * 0.65);
     }
 }
 
@@ -629,7 +799,7 @@ void pid_steer_ultra(bool wall, double distanceFromWall) { //pid contoller to st
     }
     if (pid_val > 100) pid_val = 100;
     else if (pid_val < -100) pid_val = -100;
-    if(abs(imu_current_val) > 35 && imu_current_val * pid_val > 0) pid_val = 0;
+    if(abs(imu_current_val) > 40 && imu_current_val * pid_val > 0) pid_val = 0;
     // if (no_wall) {
     //     pid_steer_imu(0);
     // } else {
@@ -639,7 +809,7 @@ void pid_steer_ultra(bool wall, double distanceFromWall) { //pid contoller to st
 
 void pid_steer_imu(double angle) {      //pid contoller to steer the car according to the imu yaw value
     move_car(true, speed_of_car);
-    refresh_servos();
+    refresh_steer();
     imu_error = imu_current_val - angle;
     imu_error *= -1;
     imu_sum_error += imu_error;
@@ -648,7 +818,7 @@ void pid_steer_imu(double angle) {      //pid contoller to steer the car accordi
     if (imu_pid_val < -100) imu_pid_val = -100;
     if (imu_pid_val > 100) imu_pid_val = 100;
     steer(imu_pid_val);
-    refresh_servos();
+    refresh_steer();
 }
 
 void pid_reverse_imu(double angle) {    //pid contoller to steer the car according to the imu yaw value in reverse 
@@ -662,7 +832,7 @@ void pid_reverse_imu(double angle) {    //pid contoller to steer the car accordi
     if (imu_pid_val < -100) imu_pid_val = -100;
     if (imu_pid_val > 100) imu_pid_val = 100;
     steer(-1 * imu_pid_val);
-    refresh_servos();
+    refresh_steer();
 }
 
 void pid_steer_imu_encoder(double finish_distance, double angle) {  //pid contoller to steer the car according to the imu yaw value until you drive a certin distance calculated from the encoder
@@ -678,7 +848,7 @@ void pid_steer_imu_encoder(double finish_distance, double angle) {  //pid contol
         if (imu_pid_val < -100) imu_pid_val = -100;
         if (imu_pid_val > 100) imu_pid_val = 100;
         steer(imu_pid_val);
-        refresh_servos();
+        refresh_steer();
     }
 }
 
@@ -725,46 +895,60 @@ void read_pixy() {  //read the pixyCam values
 int find_object() { //we forgot why we codded this, but it looks cute so we kept it :) (we acctually wrote it to avoid obstacle using only the pixyCam long story short it is not reliable)
     object_color = 0;
     read_pixy();
+    if (object_center_x < 30 || object_center_x > 280) return 0;
     return object_color;
 }
 
 void pass_the_corner(int position) { //passing the corner depends on the end position of pass the line (three casses right, left and middle)
     
     if (position == 0) {        //if the car ends in the right so the distace from outer-wall (!direction) shoud be close distance around 10
-        follow_wall(75, 12, !direction);
+        follow_wall(40, close_distance, !direction);
         turn_90_short();
     } else if (position == 1) { //if the car ends in the left so the distace from outer-wall (!direction) shoud be far distance around 60
         send_trig(2);
         while (find_distance(2) < 0.1) {
             send_trig(2);
         }
-        if (find_distance(2) > 100) {
-            follow_wall(50, 40, !direction);
+        // if (find_distance(2) > 100) {
+        //     follow_wall(40, 60, !direction);
+        //     turn_90_reverse();
+        // } else {
+            follow_wall(30, 60, !direction);
             turn_90_reverse();
-        } else {
-            follow_wall(50, 40, !direction);
-            turn_90_reverse();
-        }
+        // }
     } else {                    //if the car ends in the middle so the distace from outer-wall (!direction) shoud be middle distance around 42.5
-        follow_wall(50, 42.5, !direction);
+        follow_wall(40, middle_distance, !direction);
         turn_90_reverse();
     }
-    send_trig(3);
+    steer(0);
+    move_car(0, 0);
+    delay(500);
+    clean_all_measured_distance_arrays();
+    speed_of_car = start_speed;
+    for (int i = 0; i < 10; i++) {
+        pid_reverse_imu(0);
+        send_trig(3);
+        int temp_dist = find_distance(3);
+    }
     // all functions before ends in the middle of the corner section but various distances from the back wall
     while (find_distance(3) < 0.1) { //drive back until backward distance becomes less than 18 cm
-        speed_of_car = low_speed;
-        pid_reverse_imu(0); 
+        speed_of_car = start_speed;
+        pid_reverse_imu(0);
+        // Serial.print("\t pass the corner, < 0.1 \t\t");
+        // Serial.println(find_distance(3));
         send_trig(3);
     }
-    while (find_distance(3) > 30) { //drive back until backward distance becomes less than 30 cm
+    while (find_distance(3) > 20) { //drive back until backward distance becomes less than 30 cm
+        // Serial.print("\t pass the corner, > 25 \t\t");
+        // Serial.println(find_distance(3));
         speed_of_car = start_speed;
-        pid_reverse_imu(0); 
+        pid_reverse_imu(0);
         send_trig(3);
     }
     steer(0);
     move_car(0, 0);
-    clean_all_measured_distance_arrays();
-    delay(100);
+    // clean_all_measured_distance_arrays();
+    delay(200);
 }
 
 int pass_the_section() { 
@@ -773,30 +957,38 @@ int pass_the_section() {
     move_car(true, low_speed);
     int no_of_obstacles = 0;            //counting the obstacles in the section
     send_trig(3);
-    find_distance(3);
-    while (find_object() == 0) {         //move by the wall until detecting an obstacles
+    double temp_back_distance = find_distance(3);
+    while (find_object() == 0 || temp_back_distance < 0.1) {         //move by the wall until detecting an obstacles
         send_trig(3);
-        find_distance(3);
-        follow_wall(middle_distance, !direction);
+        temp_back_distance = find_distance(3);
+        // Serial.print("\t pass the section, object == 0 \t\t");
+        // Serial.println(temp_back_distance);
+        // follow_wall(middle_distance, !direction);
+        pid_steer_imu(0);
     }
-    if (find_distance(3) < first_obstacle_distance) {       //if the first obstacle detected is acttually in the 2 first obstacle places
+    send_trig(3);
+    temp_back_distance = find_distance(3);
+    if (temp_back_distance < first_obstacle_distance) {       //if the first obstacle detected is acttually in the 2 first obstacle places
                                                             //(there are 6 diffrent places for obstacles 2 close, 2 in the middle and 2 far)
         if (find_object() == 1) color_of_object = 1;        //if object is green set color_of_object to 1 if red to -1
         else color_of_object = -1;
         avoid_object_ultrasonic(1);
         no_of_obstacles++;
         send_trig(direction);
-        double temp_find_direction = find_distance(direction);
-        while (temp_find_direction < 0.1) {
+        double temp_find_distance = find_distance(direction);
+        while (temp_find_distance < 0.1) {
             send_trig(direction);
-            temp_find_direction = find_distance(direction);
+            temp_find_distance = find_distance(direction);
         }
-        while (find_object() == 0 && (temp_find_direction > 0.1 && temp_find_direction < 80)) { //keep following the outer wall until you detect an object or the inside wall disappers
+        int temp_object = find_object();
+        while (temp_object == 0  && temp_find_distance < 60) { //keep following the outer wall until you detect an object or the inside wall disappers
             follow_wall(middle_distance, !direction);
             send_trig(direction);
-            temp_find_direction = find_distance(direction);
+            temp_object = find_object();
+            if (object_center_x < 16 || object_center_x > 300) temp_object = 0;
+            temp_find_distance = find_distance(direction);
         }
-        if (temp_find_direction > 0.1 && temp_find_direction < 80 ) { //if the inside wall didn't dissapear yet there must be an obstacle ahead of you
+        if (temp_find_distance > 0.1 && temp_find_distance < 90 ) { //if the inside wall didn't dissapear yet there must be an obstacle ahead of you
             if (find_object() == 1) color_of_object = 1;
             else color_of_object = -1;
             avoid_object_ultrasonic(2);
@@ -812,9 +1004,9 @@ int pass_the_section() {
     } else {
         if (find_object() == 1) color_of_object = 1; //the first obstacle detected is not in the 2 first obstacle places so there must be only one (middle or far)
         else color_of_object = -1;
-        avoid_object_ultrasonic(1);
+        avoid_object_ultrasonic(2);
         no_of_obstacles++;
-        if (color_of_object == 1) {
+        if ((color_of_object == 1 && direction == 1)||(color_of_object == -1 && direction == 0)) {
             return 1;
         } else {
             return 0;
@@ -847,93 +1039,21 @@ void avoid_object_ultrasonic(int state) {                    //avoid obstacle ba
                     // or operator tests the first condition first and then tests the second
                     // so that cause us a problem in doing functions that return a value
                 double temp_find_distance_0 = find_distance(0);
-                while (find_distance(1) > 42.5) { //wait for the obstacle you have just detected
-                    follow_wall(12, 1);                 // drive near the left wall
-                    send_trig(0);
-                    temp_find_distance_0 = find_distance(0);
-                }
-                while (temp_find_distance_0 > distance_from_object) { //wait for the obstacle you have just detected
-                    follow_wall(12, 1);                 // drive near the left wall
-                    send_trig(0);
-                    temp_find_distance_0 = find_distance(0);
-                }
-                steer(-1 * imu_current_val + 25);       // move right for a litle time
-                refresh_servos();
-                delay(avoid_object_ultrasonic_delay);
-            } else {
-                send_trig(0);
-                double temp_find_distance_0 = find_distance(0);
-                while (temp_find_distance_0 < 42.5) {
-                    follow_wall(70, 0);                 // drive near the left wall
-                    temp_find_distance_0 = find_distance(0);
-                    send_trig(0);
-                }
-                while (temp_find_distance_0 > distance_from_object) {
-                    follow_wall(70, 0);                 // drive near the left wall
-                    temp_find_distance_0 = find_distance(0);
-                    send_trig(0);
-                }
-                steer(-1 * imu_current_val + 25);       // move right for a litle time 
-                refresh_servos();
-                delay(avoid_object_ultrasonic_delay);
-            }
-        } else if (object_color == 2) {                  //red obstacles solving 
-            if (direction) {
-                send_trig(1);
-                double temp_find_distance_1 = find_distance(1);
                 error = 0;
                 last_error = 0;
-                while (find_distance(1) > 42.5){
-                    follow_wall(12, 0);                 // drive near the right wall
-                    send_trig(1);
-                    temp_find_distance_1 = find_distance(1);
-                }
-                while (temp_find_distance_1 > distance_from_object || temp_find_distance_1 < 0.1) {
-                    follow_wall(12, 0);                 // drive near the right wall
-                    send_trig(1);
-                    temp_find_distance_1 = find_distance(1);
-                }
-                steer(-1 * imu_current_val - 25);       // move left for a litle time
-                refresh_servos();
-                delay(avoid_object_ultrasonic_delay);
-            } else {
-                send_trig(1);
-                double temp_find_distance_1 = find_distance(1);
-                while (temp_find_distance_1 < 42.5) {
-                    follow_wall(73, 1);                 // drive near the right wall
-                    temp_find_distance_1 = find_distance(1);
-                    send_trig(1);
-                }
-                while (temp_find_distance_1 > distance_from_object) {
-                    follow_wall(73, 1);                 // drive near the right wall
-                    temp_find_distance_1 = find_distance(1);
-                    send_trig(1);
-                }
-                steer(-1 * imu_current_val - 25);       // move left for a litle time
-                refresh_servos();
-                delay(avoid_object_ultrasonic_delay);
-            }
-        }
-    } else if (state == 2) {
-        if (object_color == 1) {                         //green obstacles solving 
-            if (!direction) {
-                send_trig(0);
-                    // or operator tests the first condition first and then tests the second
-                    // so that cause us a problem in doing functions that return a value
-                double temp_find_distance_0 = find_distance(0);
-                while (find_distance(1) > middle_distance){
-                    follow_wall(12, 1);
+                while (find_distance(1) > middle_distance) { //wait for the obstacle you have just detected
+                    follow_wall(close_distance, 1);                 // drive near the left wall
                     send_trig(0);
                     temp_find_distance_0 = find_distance(0);
                 }
-                while (temp_find_distance_0 > distance_from_object) { //wait for the obstacle you have just detected
-                    follow_wall(12, 1);                 // drive near the left wall
+                while (temp_find_distance_0 > distance_from_object || temp_find_distance_0 < 0.1) { //wait for the obstacle you have just detected
+                    follow_wall(close_distance, 1);                 // drive near the left wall
                     send_trig(0);
                     temp_find_distance_0 = find_distance(0);
                 }
-                steer(-1 * imu_current_val + 25);       // move right for a litle time
+                steer(-1 * imu_current_val + 30);       // move right for a litle time
                 refresh_servos();
-                delay(avoid_object_ultrasonic_delay * 2);
+                delay(avoid_object_ultrasonic_delay);
             } else {
                 send_trig(0);
                 double temp_find_distance_0 = find_distance(0);
@@ -947,9 +1067,93 @@ void avoid_object_ultrasonic(int state) {                    //avoid obstacle ba
                     temp_find_distance_0 = find_distance(0);
                     send_trig(0);
                 }
-                steer(-1 * imu_current_val + 25);       // move right for a litle time 
+                steer(-1 * imu_current_val + 30);       // move right for a litle time 
                 refresh_servos();
+                delay(avoid_object_ultrasonic_delay);
+            }
+        } else if (object_color == 2) {                  //red obstacles solving 
+            if (direction) {
+                send_trig(1);
+                double temp_find_distance_1 = find_distance(1);
+                error = 0;
+                last_error = 0;
+                while (find_distance(1) > middle_distance){
+                    follow_wall(close_distance, 0);                 // drive near the right wall
+                    send_trig(1);
+                    temp_find_distance_1 = find_distance(1);
+                }
+                while (temp_find_distance_1 > distance_from_object || temp_find_distance_1 < 0.1) {
+                    follow_wall(close_distance, 0);                 // drive near the right wall
+                    send_trig(1);
+                    temp_find_distance_1 = find_distance(1);
+                }
+                steer(-1 * imu_current_val - 30);       // move left for a litle time
+                refresh_servos();
+                delay(avoid_object_ultrasonic_delay);
+            } else {
+                send_trig(1);
+                double temp_find_distance_1 = find_distance(1);
+                while (temp_find_distance_1 < middle_distance) {
+                    follow_wall(far_distance, 1);                 // drive near the right wall
+                    temp_find_distance_1 = find_distance(1);
+                    send_trig(1);
+                }
+                while (temp_find_distance_1 > distance_from_object) {
+                    follow_wall(far_distance, 1);                 // drive near the right wall
+                    temp_find_distance_1 = find_distance(1);
+                    send_trig(1);
+                }
+                steer(-1 * imu_current_val - 30);       // move left for a litle time
+                refresh_servos();
+                delay(avoid_object_ultrasonic_delay);
+            }
+        }
+    } else if (state == 2) {
+        if (object_color == 1) {                         //green obstacles solving 
+            if (!direction) {
+                send_trig(0);
+                    // or operator tests the first condition first and then tests the second
+                    // so that cause us a problem in doing functions that return a value
+                double temp_find_distance_0 = find_distance(0);
+                while (find_distance(1) > middle_distance){
+                    follow_wall(close_distance, 1);
+                    send_trig(0);
+                    temp_find_distance_0 = find_distance(0);
+                }
+                while (temp_find_distance_0 > distance_from_object) { //wait for the obstacle you have just detected
+                    follow_wall(close_distance, 1);                 // drive near the left wall
+                    send_trig(0);
+                    temp_find_distance_0 = find_distance(0);
+                }
+                steer(-1 * imu_current_val + 30);       // move right for a litle time
+                refresh_steer();
                 delay(avoid_object_ultrasonic_delay * 2);
+            } else {
+                send_trig(0);
+                double temp_find_distance_0 = find_distance(0);
+                while (temp_find_distance_0 < middle_distance) {
+                    follow_wall(far_distance, 0);                 // drive near the left wall
+                    temp_find_distance_0 = find_distance(0);
+                    send_trig(0);
+                }
+                while (temp_find_distance_0 > distance_from_object) {
+                    follow_wall(far_distance, 0);                 // drive near the left wall
+                    temp_find_distance_0 = find_distance(0);
+                    send_trig(0);
+                }
+                steer(-1 * imu_current_val + 30);       // move right for a litle time 
+                refresh_steer();
+                delay(avoid_object_ultrasonic_delay * 2);
+                // double temp_find_distance_1 = find_distance(1);
+                // while(temp_find_distance_1 < 0.1) {
+                //     temp_find_distance_1 = find_distance(1);
+                //     send_trig(1);
+                // }
+                // while(temp_find_distance_1 > 2 && temp_find_distance_1 < 50) {
+                //     temp_find_distance_1 = find_distance(1);
+                //     send_trig(1);
+                //     pid_steer_imu(7);
+                // }
             }
         } else if (object_color == 2) {                  //red obstacles solving 
             if (direction) {
@@ -958,34 +1162,46 @@ void avoid_object_ultrasonic(int state) {                    //avoid obstacle ba
                 error = 0;
                 last_error = 0;
                 while (temp_find_distance_1 < middle_distance){
-                    follow_wall(12, 0);
+                    follow_wall(close_distance, 0);
                     send_trig(1);
                     temp_find_distance_1 = find_distance(1);
                 }
                 while (temp_find_distance_1 > distance_from_object) {
-                    follow_wall(12, 0);                 // drive near the right wall
+                    follow_wall(close_distance, 0);                 // drive near the right wall
                     send_trig(1);
                     temp_find_distance_1 = find_distance(1);
                 }
-                steer(-1 * imu_current_val - 25);       // move left for a litle time
-                refresh_servos();
+                steer(-1 * imu_current_val - 30);       // move left for a litle time
+                refresh_steer();
                 delay(avoid_object_ultrasonic_delay * 2);
             } else {
                 send_trig(1);
                 double temp_find_distance_1 = find_distance(1);
                 while (temp_find_distance_1 < middle_distance) {
-                    follow_wall(73, 1);                 // drive near the right wall
+                    follow_wall(far_distance, 1);                 // drive near the right wall
                     temp_find_distance_1 = find_distance(1);
                     send_trig(1);
                 }
                 while (temp_find_distance_1 > distance_from_object) {
-                    follow_wall(73, 1);                 // drive near the right wall
+                    follow_wall(far_distance, 1);                 // drive near the right wall
                     temp_find_distance_1 = find_distance(1);
                     send_trig(1);
                 }
-                steer(-1 * imu_current_val - 25);       // move left for a litle time
-                refresh_servos();
+                steer(-1 * imu_current_val - 30);       // move left for a litle time
+                refresh_steer();
                 delay(avoid_object_ultrasonic_delay * 2);
+                // move_car(0, 0);
+                // delay(4000);
+                // double temp_find_distance_0 = find_distance(0);
+                // while(temp_find_distance_0 < 0.1) {
+                //     temp_find_distance_0 = find_distance(0);
+                //     send_trig(0);
+                // }
+                // while(temp_find_distance_0 > 0 && temp_find_distance_0 < 50) {
+                //     temp_find_distance_0 = find_distance(0);
+                //     send_trig(0);
+                //     pid_steer_imu(-7);
+                // }
             }
         }
     }
@@ -1008,6 +1224,7 @@ void turn_180_degrees() {
         } 
         move_car(true, low_speed);
         turn_90_reverse();
+        number_of_turns += temp_direction;
     } else {
         while (find_distance(3) < 10) {
             send_trig(3);
@@ -1015,63 +1232,283 @@ void turn_180_degrees() {
             pid_steer_imu(0);
         } 
         move_car(true, low_speed);
-        while (abs(imu_current_val) < 60){
-            steer(temp_direction * 100);
-            refresh_servos();
+        pause_interrupts();
+        if (direction){
+            while (imu_current_val > -40){
+                steer(temp_direction * 100);
+                refresh_steer();
+            }
+        } else {
+            while (imu_current_val < 40){
+                steer(temp_direction * 100);
+                refresh_steer();
+            }
         }
         move_car(0,0);
         steer(-1 * temp_direction * 100);
-        delay(200);
+        delay(400);
         move_car(0,start_speed);
         while (abs(imu_current_val) < 85) {
             steer(-1 * temp_direction * 100);
-            refresh_servos();
+            refresh_steer();
         }
+        resume_interrupts();
     }
-    while (find_distance(3) > 30 || find_distance(3) < 0.1){
+    clean_all_measured_distance_arrays();
+    steer(0);
+    while (find_distance(3) > 25 || find_distance(3) < 0.1){
         speed_of_car = start_speed;
-        pid_reverse_imu(0);
+        pid_reverse_imu(temp_direction * 90);
         send_trig(3);
     }
     move_car(0,0);
     steer(0);
 }
-void solve_obstacle_challenge() {
+
+void pass_first_section() {
+    delay(200);
+    speed_of_car = low_speed;
     int temp_distance_0 = find_distance(0);
     int temp_distance_1 = find_distance(1);
-    while (temp_distance_0 < 0.1 || temp_distance_1 < 0.1) {
+    int temp_distance_3 = find_distance(3);
+    while (temp_distance_0 < 0.1 || temp_distance_1 < 0.1 || temp_distance_3 < 0.1) {
         send_trig(0);
         send_trig(1);
+        send_trig(3);
         temp_distance_0 = find_distance(0);
         temp_distance_1 = find_distance(1);
+        temp_distance_3 = find_distance(3);
     }
     if (temp_distance_1 > temp_distance_0) direction = 0;
-    follow_wall(30, middle_distance, !direction);
-    turn_90_reverse();
-    for (int k = 0; k < 7; k++){
-        int position_after_passing  = pass_the_section();
-        pass_the_corner(position_after_passing);
-        clean_all_measured_distance_arrays();
-    }
+    // follow_wall(50, middle_distance, !direction);
+    // pass_the_corner(2);
+    send_trig(direction);
+    double temp_find_distance = find_distance(direction);
+    int temp_color = find_object();
+    if (temp_distance_3 < 120) {
+        while (temp_find_distance < 60 && temp_color == 0) {
+            pid_steer_imu(0);
+            send_trig(direction);
+            temp_color = find_object();
+            temp_find_distance = find_distance(direction);
+            if (object_center_x > 266 || object_center_x < 50 ) temp_color = 0; 
+        }
+        if(temp_find_distance < 60) {
+            avoid_object_ultrasonic(2);
+            if ((object_color == 1 && direction == 1)||(object_color == 2 && direction == 0)) {
+                pass_the_corner(1);
+            } else {
+                pass_the_corner(0);
+            }
+        } else {
+            follow_wall(50, middle_distance, !direction);
+            pass_the_corner(2);
+        }
+            
+    } else {
+        follow_wall(50, middle_distance, !direction);
+        pass_the_corner(2);
+    }    
+}
+
+void solve_opposite_direction() {
     turn_180_degrees();
     direction = !direction;
     clean_all_measured_distance_arrays();
     real_value = 0;
     number_of_turns = 0;
-    for (int k = 0; k < 3; k++){
+    for (int k = 0; k < 4; k++){
         int position_after_passing  = pass_the_section();
         pass_the_corner(position_after_passing);
         clean_all_measured_distance_arrays();
+    }
+}
+
+void solve_obstacle_challenge() {
+    pass_first_section();
+    for (int k = 0; k < 8; k++){
+        int position_after_passing  = pass_the_section();
+        pass_the_corner(position_after_passing);
+        clean_all_measured_distance_arrays();
+    }
+    // int position_after_passing  = pass_the_section();
+    if (object_color == 2) {
+        // pass_the_corner(2);
+        clean_all_measured_distance_arrays();
+        solve_opposite_direction();
+    } else {
+        // pass_the_corner(position_after_passing);
+        clean_all_measured_distance_arrays();
+        for (int k = 0; k < 4; k++){
+            int position_after_passing  = pass_the_section();
+            pass_the_corner(position_after_passing);
+            clean_all_measured_distance_arrays();
+        } 
     }
     while (find_distance(3) < 0.1){
         send_trig(3);
         follow_wall(middle_distance, !direction);
     }
-    while (find_distance(3) < 110){
+    int temp_color = find_object();
+    double temp_final_distance = find_distance(3);
+    while (temp_color == 0){
         send_trig(3);
         follow_wall(middle_distance, !direction);
+        temp_color = find_object();
+        temp_final_distance = find_distance(3);
+    }
+    if (temp_final_distance < first_obstacle_distance) {
+        avoid_object_ultrasonic(1);
+        move_car(1, low_speed);
+        steer(0);
+        delay(1000);
+    } else {
+        while (find_distance(3) < 110){
+            follow_wall(middle_distance, !direction);
+        }
     }
     move_car(0, 0);
     steer(0);
     refresh_servos();
+}
+
+void avoid_object_time(int state) {
+    if (state == 1){
+        for (int i = 0; i < 20; i++) {
+            pid_steer_imu(-45);
+            delay(100);
+        }
+        for (int i = 0; i < 10; i++) {
+            pid_steer_imu(0);
+            delay(100);
+        }
+        if ((color_of_object == 3 && blue_counter == 2) || color_of_object == 2) {
+            move_car(0, 0);
+            delay(5500);
+        }
+        for (int i = 0; i < 20; i++) {
+            pid_steer_imu(45);
+            delay(100);
+        }
+    } else {
+        for (int i = 0; i < 20; i++) {
+            pid_steer_imu(45);
+            delay(100);
+        }
+        for (int i = 0; i < 10; i++) {
+            pid_steer_imu(0);
+            delay(100);
+        }
+        move_car(0, 0);
+        delay(5500);
+        for (int i = 0; i < 20; i++) {
+            pid_steer_imu(-45);
+            delay(100);
+        }
+    }
+    
+    
+}
+int pass_rule_section(int turn_no, double distance_from_outer_wall) {
+    delay(200);
+    send_trig(3);
+    int temp_next_turn;
+    double temp_dist_3 = find_distance(3);
+    while (temp_dist_3 < 0.1) {
+        send_trig(3);
+        temp_dist_3 = find_distance(3);
+    }
+    while (find_object() == 0 && temp_dist_3 < 170){
+        send_trig(3);
+        temp_dist_3 = find_distance(3);
+        pid_steer_imu(0);
+    }
+    if (temp_dist_3 < 170){
+        if (object_color == 1) {
+            surprise_rule_array[turn_no % 4] = "g";
+            avoid_object_time(1);
+            if (!direction) temp_next_turn = 0;
+            else temp_next_turn = 1;
+        } else if (object_color == 2){
+            surprise_rule_array[turn_no % 4] = "r";
+            avoid_object_time(2);
+            if (!direction) temp_next_turn = 1;
+            else temp_next_turn = 0;
+        } else if (object_color == 3){
+            surprise_rule_array[turn_no % 4] = "b";
+            blue_counter++;
+            if (blue_counter == 2) {
+                if (object_center_x < 158){
+                    avoid_object_time(2);
+                } else {
+                    avoid_object_time(2);
+                }
+            }
+            delay(200);
+            temp_next_turn = 2;
+        }
+    } else {
+        surprise_rule_array[turn_no % 4] = "n";
+        follow_wall(distance_from_outer_wall, !direction);
+        temp_next_turn = 2;
+    }
+    clean_all_measured_distance_arrays();
+    return temp_next_turn;
+}
+
+void pass_first_surprise_rule() {
+    send_trig(0);
+    send_trig(1);
+    double temp_right_distance = find_distance(0);
+    double temp_left_distance = find_distance(1);
+    while (temp_right_distance < 0.1 || temp_left_distance < 0.1) {
+        send_trig(0);
+        send_trig(1);
+        temp_right_distance = find_distance(0);
+        temp_left_distance = find_distance(1);
+        // pid_steer_imu(0);
+        // refresh_servos();
+    }
+    while (find_object() == 0 && temp_right_distance < 100 && temp_left_distance < 100) {
+        send_trig(0);
+        send_trig(1);
+        temp_right_distance = find_distance(0);
+        temp_left_distance = find_distance(1);
+        pid_steer_imu(0);
+        refresh_servos();
+    }
+    if (temp_right_distance < 100 && temp_left_distance < 100) {
+        if (object_color == 1){
+            surprise_rule_array[3] = "g";
+            // Serial.println("green");
+            avoid_object_time(1);
+        } else if (object_color == 2){
+            surprise_rule_array[3] = "r";
+            // Serial.println("red");
+            avoid_object_time(2);
+        } else if (object_color == 3){
+            surprise_rule_array[3] = "b";
+            blue_counter++;
+            if (object_center_x < 158){
+                avoid_object_time(2);
+            } else {
+                avoid_object_time(1);
+            }
+        }
+    }
+    while (temp_right_distance < 100 && temp_left_distance < 100) {
+        send_trig(0);
+        send_trig(1);
+        temp_right_distance = find_distance(0);
+        temp_left_distance = find_distance(1);
+        pid_steer_imu(0);
+        refresh_servos();
+    }
+    if (temp_right_distance > 100) direction = 0;
+    if (find_distance(!direction) < 30) {
+        pass_the_corner(0);
+    } else {
+        pass_the_corner(2);
+    }
+    clean_all_measured_distance_arrays();
 }
